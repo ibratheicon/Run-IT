@@ -9,52 +9,72 @@ import {
   type ReactNode,
 } from 'react';
 
-import { setCurrentUser } from './api';
-import type { User } from './types';
+import { supabase } from './supabase';
 
 /**
- * v1 auth is lightweight name entry, not email magic links — there is no
- * email provider in the loop and nothing to rate limit. The device holds an
- * anonymous id plus a display name.
+ * Identity is two independent things:
  *
- * Swapping in Supabase anonymous auth later means replacing the id generated
- * here with the one from `supabase.auth.signInAnonymously()` and keeping the
- * name in `user_metadata`.
+ *   - a Supabase anonymous session, which is what RLS checks and what every
+ *     row is keyed on;
+ *   - a display name, which lives only on this device and gets copied onto
+ *     each event the user hosts. There is no profiles table.
  */
 
-const STORAGE_KEY = 'runit.session.v1';
+const NAME_KEY = 'runit.displayName';
 
-type SessionValue = {
-  user: User | null;
+export const NAME_MIN_LENGTH = 1;
+export const NAME_MAX_LENGTH = 30;
+
+export type SessionValue = {
+  userId: string | null;
+  displayName: string | null;
   loading: boolean;
-  signIn: (name: string) => Promise<void>;
-  signOut: () => Promise<void>;
+  /** Set when anonymous sign-in failed, so the gate can say so out loud. */
+  error: string | null;
+  setDisplayName: (name: string) => Promise<void>;
 };
 
 const SessionContext = createContext<SessionValue | null>(null);
 
-function newId(): string {
-  return `u_${Math.random().toString(36).slice(2, 10)}`;
-}
-
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [displayName, setName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((raw) => {
+    async function boot(): Promise<void> {
+      const [{ data: sessionData }, storedName] = await Promise.all([
+        supabase.auth.getSession(),
+        AsyncStorage.getItem(NAME_KEY).catch(() => null),
+      ]);
+      if (cancelled) return;
+
+      if (storedName && storedName.trim()) setName(storedName);
+
+      // Already signed in from a previous launch: reuse that user id.
+      let id = sessionData.session?.user.id ?? null;
+
+      if (!id) {
+        const { data, error: signInError } = await supabase.auth.signInAnonymously();
         if (cancelled) return;
-        if (raw) {
-          const parsed = JSON.parse(raw) as User;
-          setUser(parsed);
-          setCurrentUser(parsed);
+        if (signInError) {
+          setError(`Couldn't reach Supabase (${signInError.message})`);
+        } else {
+          id = data.user?.id ?? null;
         }
-      })
-      .catch(() => {
-        // A corrupt or unreadable session just means we ask for a name again.
+      }
+
+      setUserId(id);
+    }
+
+    boot()
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : 'Something went wrong');
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -65,22 +85,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signIn = useCallback(async (name: string) => {
-    const next: User = { id: newId(), name: name.trim() };
-    setUser(next);
-    setCurrentUser(next);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  // Token refresh can hand back a different user; keep the id in step with it.
+  // INITIAL_SESSION is skipped because boot() above already owns that read —
+  // letting it through can clear a userId we just signed in.
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'INITIAL_SESSION') return;
+      setUserId(session?.user.id ?? null);
+    });
+    return () => data.subscription.unsubscribe();
   }, []);
 
-  const signOut = useCallback(async () => {
-    setUser(null);
-    setCurrentUser(null);
-    await AsyncStorage.removeItem(STORAGE_KEY);
+  const setDisplayName = useCallback(async (next: string) => {
+    const trimmed = next.trim().slice(0, NAME_MAX_LENGTH);
+    setName(trimmed);
+    await AsyncStorage.setItem(NAME_KEY, trimmed);
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, signIn, signOut }),
-    [user, loading, signIn, signOut]
+    () => ({ userId, displayName, loading, error, setDisplayName }),
+    [userId, displayName, loading, error, setDisplayName]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -1,8 +1,7 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -13,32 +12,67 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EventCard } from '../components/EventCard';
-import { joinEvent, leaveEvent, listLiveEvents } from '../lib/api';
+import { fetchFeed, joinEvent, leaveEvent } from '../lib/api';
 import { useSession } from '../lib/session';
 import { colors, radius, spacing } from '../lib/theme';
 import { isLive } from '../lib/time';
-import type { Event } from '../lib/types';
+import type { FeedEvent } from '../lib/types';
 import { useNow } from '../lib/useNow';
+
+/** How often the feed refetches on its own, so the other person's taps show up. */
+const POLL_MS = 20000;
+
+function message(cause: unknown): string {
+  return cause instanceof Error ? cause.message : 'Something went wrong.';
+}
 
 export default function Feed() {
   const router = useRouter();
-  const { user, signOut } = useSession();
+  const { userId, displayName } = useSession();
   const now = useNow();
 
-  const [events, setEvents] = useState<Event[]>([]);
+  const [events, setEvents] = useState<FeedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState<string[]>([]);
+
+  /**
+   * Events with a join/leave in flight. A background refetch must not stomp
+   * the optimistic state of a card the user just tapped.
+   */
+  const pending = useRef<Set<string>>(new Set());
+
+  const markPending = useCallback((id: string, on: boolean) => {
+    if (on) pending.current.add(id);
+    else pending.current.delete(id);
+    setPendingIds([...pending.current]);
+  }, []);
+
+  const applyRows = useCallback((rows: FeedEvent[]) => {
+    setEvents((prev) => {
+      if (pending.current.size === 0) return rows;
+      const byId = new Map(prev.map((event) => [event.id, event]));
+      return rows.map((row) => {
+        const local = pending.current.has(row.id) ? byId.get(row.id) : undefined;
+        return local
+          ? { ...row, joined: local.joined, joined_count: local.joined_count }
+          : row;
+      });
+    });
+  }, []);
 
   const load = useCallback(async () => {
+    if (!userId) return;
     try {
-      setEvents(await listLiveEvents());
-    } catch {
-      Alert.alert("Couldn't load the feed", 'Pull down to try again.');
+      applyRows(await fetchFeed(userId));
+      setError(null);
+    } catch (cause) {
+      setError(message(cause));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userId, applyRows]);
 
   // Refetch whenever the feed comes back into view, including after hosting.
   useFocusEffect(
@@ -47,6 +81,11 @@ export default function Feed() {
     }, [load])
   );
 
+  useEffect(() => {
+    const id = setInterval(() => void load(), POLL_MS);
+    return () => clearInterval(id);
+  }, [load]);
+
   const refresh = useCallback(async () => {
     setRefreshing(true);
     await load();
@@ -54,27 +93,49 @@ export default function Feed() {
   }, [load]);
 
   /**
-   * The server already applied the expiry filter, but the clock keeps moving
+   * The view already applied the expiry filter, but the clock keeps moving
    * while the screen is open — re-filter locally so stale events disappear.
    */
   const live = useMemo(
-    () => events.filter((event) => isLive(event.startsAt, now)),
+    () => events.filter((event) => isLive(event.starts_at, now)),
     [events, now]
   );
 
-  const toggleJoin = useCallback(async (event: Event) => {
-    setPendingId(event.id);
-    try {
-      const updated = event.joinedByMe
-        ? await leaveEvent(event.id)
-        : await joinEvent(event.id);
-      setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
-    } catch {
-      Alert.alert("That didn't go through", 'Try again in a second.');
-    } finally {
-      setPendingId(null);
-    }
-  }, []);
+  const toggleJoin = useCallback(
+    async (event: FeedEvent) => {
+      if (!userId || pending.current.has(event.id)) return;
+      const joining = !event.joined;
+
+      markPending(event.id, true);
+      // Optimistic: the tap lands now, the server reconciles a moment later.
+      setEvents((prev) =>
+        prev.map((row) =>
+          row.id === event.id
+            ? {
+                ...row,
+                joined: joining,
+                joined_count: Math.max(0, row.joined_count + (joining ? 1 : -1)),
+              }
+            : row
+        )
+      );
+
+      try {
+        if (joining) await joinEvent(event.id, userId);
+        else await leaveEvent(event.id, userId);
+        setError(null);
+      } catch (cause) {
+        setEvents((prev) =>
+          prev.map((row) => (row.id === event.id ? { ...row, ...event } : row))
+        );
+        setError(message(cause));
+      } finally {
+        markPending(event.id, false);
+        void load();
+      }
+    },
+    [userId, markPending, load]
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -89,22 +150,22 @@ export default function Feed() {
           </Text>
         </View>
 
-        <Pressable
-          onPress={() =>
-            Alert.alert(user?.name ?? 'You', 'Switch to a different name?', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },
-            ])
-          }
-          accessibilityRole="button"
-          accessibilityLabel="Your account"
+        <View
+          accessibilityRole="image"
+          accessibilityLabel={`Signed in as ${displayName ?? 'you'}`}
           style={styles.avatar}
         >
           <Text style={styles.avatarText}>
-            {(user?.name ?? '?').charAt(0).toUpperCase()}
+            {(displayName ?? '?').charAt(0).toUpperCase()}
           </Text>
-        </Pressable>
+        </View>
       </View>
+
+      {error ? (
+        <View style={styles.banner}>
+          <Text style={styles.bannerText}>{error}</Text>
+        </View>
+      ) : null}
 
       {loading ? (
         <View style={styles.center}>
@@ -114,10 +175,7 @@ export default function Feed() {
         <FlatList
           data={live}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={[
-            styles.list,
-            live.length === 0 && styles.listEmpty,
-          ]}
+          contentContainerStyle={[styles.list, live.length === 0 && styles.listEmpty]}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
           refreshControl={
             <RefreshControl
@@ -131,8 +189,7 @@ export default function Feed() {
             <EventCard
               event={item}
               now={now}
-              isHost={item.hostId === user?.id}
-              pending={pendingId === item.id}
+              pending={pendingIds.includes(item.id)}
               onToggleJoin={() => void toggleJoin(item)}
             />
           )}
@@ -160,7 +217,7 @@ export default function Feed() {
 function EmptyFeed({ onHost }: { onHost: () => void }) {
   return (
     <View style={styles.empty}>
-      <Text style={styles.emptyTitle}>Nothing running right now</Text>
+      <Text style={styles.emptyTitle}>Nothing happening right now</Text>
       <Text style={styles.emptyBody}>
         Somebody has to go first. Four fields, ten seconds, and whoever&apos;s
         free will see it.
@@ -170,7 +227,7 @@ function EmptyFeed({ onHost }: { onHost: () => void }) {
         accessibilityRole="button"
         style={({ pressed }) => [styles.emptyCta, pressed && styles.fabPressed]}
       >
-        <Text style={styles.emptyCtaLabel}>Start something</Text>
+        <Text style={styles.emptyCtaLabel}>Host something</Text>
       </Pressable>
     </View>
   );
@@ -220,6 +277,22 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 16,
     fontWeight: '700',
+  },
+  banner: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    backgroundColor: colors.accentDim,
+  },
+  bannerText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   center: {
     flex: 1,

@@ -1,8 +1,7 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,8 +15,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Chip } from '../components/Chip';
 import { createEvent } from '../lib/api';
+import { EVENT_VISIBLE_MINUTES_AFTER_START } from '../lib/config';
+import { useSession } from '../lib/session';
 import { colors, radius, spacing } from '../lib/theme';
-import { clockTime, minutesFromNow } from '../lib/time';
+import { clockTime } from '../lib/time';
+import { useNow } from '../lib/useNow';
 
 /** Shortcuts for the things people actually post at 8pm on a Tuesday. */
 const ACTIVITY_IDEAS = [
@@ -46,33 +48,61 @@ const WHEN_OPTIONS = [
 ];
 
 const MIN_WANTED = 1;
-const MAX_WANTED = 20;
+const MAX_WANTED = 50;
+
+const MAX_TITLE = 80;
+const MAX_PLACE = 60;
 
 export default function Host() {
   const router = useRouter();
+  const { userId, displayName } = useSession();
+  // Keeps the "Starts 10:59 PM" hint honest while the form sits open.
+  const now = useNow();
 
-  const [activity, setActivity] = useState('');
-  const [location, setLocation] = useState('');
+  const [title, setTitle] = useState('');
+  const [place, setPlace] = useState('');
   const [offsetMinutes, setOffsetMinutes] = useState(30);
   const [wanted, setWanted] = useState(4);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // State updates are async, so rapid taps can both pass a `busy` check and
+  // post twice. The ref flips synchronously on the first tap.
+  const submitting = useRef(false);
 
-  const valid = activity.trim().length >= 3 && location.trim().length >= 2;
+  const valid = title.trim().length > 0 && place.trim().length > 0;
+  const startsAt = new Date(now + offsetMinutes * 60000).toISOString();
+
+  function leave() {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  }
 
   async function goLive() {
-    if (!valid || busy) return;
+    if (!valid || submitting.current) return;
+    if (!userId) {
+      setError('Not signed in yet. Give it a second and try again.');
+      return;
+    }
+
+    submitting.current = true;
     setBusy(true);
+    setError(null);
     try {
       await createEvent({
-        activity,
-        location,
-        startsAt: minutesFromNow(offsetMinutes),
-        capacityWanted: wanted,
+        host_id: userId,
+        host_name: displayName ?? 'Someone',
+        title: title.trim(),
+        place: place.trim(),
+        // Recomputed at submit time, not when the chip was tapped.
+        starts_at: new Date(Date.now() + offsetMinutes * 60000).toISOString(),
+        wants: wanted,
       });
-      router.back();
-    } catch {
-      Alert.alert("Couldn't post that", 'Try again in a second.');
-    } finally {
+      // No history to pop after a refresh, so go to the feed directly.
+      router.replace('/');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn't post that.");
+      // Only re-enable on failure — on success we're on our way out.
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -81,7 +111,7 @@ export default function Host() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={leave}
           accessibilityRole="button"
           hitSlop={12}
         >
@@ -101,40 +131,32 @@ export default function Host() {
         >
           <Field label="What">
             <TextInput
-              value={activity}
-              onChangeText={setActivity}
+              value={title}
+              onChangeText={setTitle}
               placeholder="Boba run to Sharetea"
               placeholderTextColor={colors.faint}
               autoFocus
-              maxLength={60}
+              maxLength={MAX_TITLE}
               returnKeyType="next"
               style={styles.input}
             />
-            <ChipRow
-              options={ACTIVITY_IDEAS}
-              selected={activity}
-              onSelect={setActivity}
-            />
+            <ChipRow options={ACTIVITY_IDEAS} selected={title} onSelect={setTitle} />
           </Field>
 
           <Field label="Where">
             <TextInput
-              value={location}
-              onChangeText={setLocation}
+              value={place}
+              onChangeText={setPlace}
               placeholder="Otero lobby"
               placeholderTextColor={colors.faint}
-              maxLength={60}
+              maxLength={MAX_PLACE}
               returnKeyType="done"
               style={styles.input}
             />
-            <ChipRow
-              options={PLACE_IDEAS}
-              selected={location}
-              onSelect={setLocation}
-            />
+            <ChipRow options={PLACE_IDEAS} selected={place} onSelect={setPlace} />
           </Field>
 
-          <Field label="When" hint={`Starts ${clockTime(minutesFromNow(offsetMinutes))}`}>
+          <Field label="When" hint={`Starts ${clockTime(startsAt)}`}>
             <View style={styles.chipWrap}>
               {WHEN_OPTIONS.map((option) => (
                 <Chip
@@ -168,6 +190,7 @@ export default function Host() {
         </ScrollView>
 
         <View style={styles.footer}>
+          {error ? <Text style={styles.error}>{error}</Text> : null}
           <Pressable
             onPress={goLive}
             disabled={!valid || busy}
@@ -185,7 +208,7 @@ export default function Host() {
             )}
           </Pressable>
           <Text style={styles.footerNote}>
-            Disappears on its own 30 minutes after it starts.
+            {`Disappears on its own ${EVENT_VISIBLE_MINUTES_AFTER_START} minutes after it starts.`}
           </Text>
         </View>
       </KeyboardAvoidingView>
@@ -396,6 +419,13 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '700',
+  },
+  error: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+    textAlign: 'center',
   },
   footerNote: {
     color: colors.faint,

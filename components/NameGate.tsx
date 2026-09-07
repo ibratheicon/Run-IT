@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -10,25 +10,46 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useSession } from '../lib/session';
+import {
+  NAME_MAX_LENGTH,
+  NAME_MIN_LENGTH,
+  useSession,
+  type SessionValue,
+} from '../lib/session';
 import { colors, radius, spacing } from '../lib/theme';
 
 /**
  * The entire onboarding: a first name. No email, no password, no verification
- * step that can rate-limit us on move-in day.
+ * step that can rate-limit us on move-in day. The name never leaves the
+ * device except as a copy on the events this person hosts.
  */
-export function NameGate() {
-  const { signIn } = useSession();
+export function NameGate({ children }: { children: ReactNode }) {
+  const { displayName, setDisplayName } = useSession();
+
+  if (displayName) return <>{children}</>;
+
+  return <NamePrompt setDisplayName={setDisplayName} />;
+}
+
+function NamePrompt({
+  setDisplayName,
+}: {
+  setDisplayName: SessionValue['setDisplayName'];
+}) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const valid = name.trim().length >= 2;
+  const valid = name.trim().length >= NAME_MIN_LENGTH;
 
   async function submit() {
     if (!valid || busy) return;
     setBusy(true);
+    setError(null);
     try {
-      await signIn(name);
+      await setDisplayName(name);
+    } catch {
+      setError("Couldn't save that name. Try again.");
     } finally {
       setBusy(false);
     }
@@ -60,13 +81,14 @@ export function NameGate() {
               autoCorrect={false}
               returnKeyType="go"
               onSubmitEditing={submit}
-              maxLength={24}
+              maxLength={NAME_MAX_LENGTH}
               style={styles.input}
             />
             <Text style={styles.hint}>
               That&apos;s it — no email, no password. This shows up next to
               anything you host or join.
             </Text>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
           </View>
 
           <Pressable
@@ -137,6 +159,12 @@ const styles = StyleSheet.create({
   hint: {
     color: colors.faint,
     fontSize: 13,
+    lineHeight: 19,
+  },
+  error: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
     lineHeight: 19,
   },
   cta: {

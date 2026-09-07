@@ -1,4 +1,11 @@
-# Swapping the mock for Supabase
+# Supabase
+
+> **Status: connected.** `lib/supabase.ts` holds the client, `lib/api.ts` holds
+> every query, and the feed reads the `live_events` view (which applies the
+> expiry window, counts joins and sorts by `starts_at`). The schema notes below
+> are the original plan and use the older column names — the live tables are
+> `events(title, place, starts_at, wants, host_id, host_name)` and
+> `joins(event_id, user_id)`, and a trigger inserts the host's own join row.
 
 `lib/api.ts` is the only file that knows where data comes from. Every screen
 imports from it, so this swap touches one file plus a new client module.

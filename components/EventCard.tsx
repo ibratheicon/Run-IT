@@ -1,38 +1,35 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, spacing } from '../lib/theme';
-import { clockTime, relativeStart } from '../lib/time';
-import type { Event } from '../lib/types';
+import { clockTime, startLabel } from '../lib/time';
+import type { FeedEvent } from '../lib/types';
 
 type Props = {
-  event: Event;
+  event: FeedEvent;
   now: number;
-  isHost: boolean;
   pending: boolean;
   onToggleJoin: () => void;
 };
 
-/** Under 15 minutes out, the time reads as urgent rather than informational. */
-const SOON_MS = 15 * 60 * 1000;
-
-export function EventCard({ event, now, isHost, pending, onToggleJoin }: Props) {
-  const soon = new Date(event.startsAt).getTime() - now < SOON_MS;
-  const fill = Math.min(event.joinCount / Math.max(event.capacityWanted, 1), 1);
+export function EventCard({ event, now, pending, onToggleJoin }: Props) {
+  const when = startLabel(event.starts_at, now);
+  const fill = Math.min(
+    Math.max(event.joined_count / Math.max(event.wants, 1), 0),
+    1
+  );
 
   return (
     <View style={styles.card}>
       <View style={styles.timeRow}>
-        <Text style={[styles.when, soon && styles.whenSoon]}>
-          {relativeStart(event.startsAt, now)}
-        </Text>
-        <Text style={styles.clock}>{clockTime(event.startsAt)}</Text>
+        <Text style={[styles.when, when.urgent && styles.whenSoon]}>{when.text}</Text>
+        <Text style={styles.clock}>{clockTime(event.starts_at)}</Text>
       </View>
 
-      <Text style={styles.activity}>{event.activity}</Text>
+      <Text style={styles.activity}>{event.title}</Text>
 
       <Text style={styles.meta} numberOfLines={1}>
-        {event.location}
-        <Text style={styles.metaDim}>{isHost ? '  ·  you' : `  ·  ${event.hostName}`}</Text>
+        {event.place}
+        <Text style={styles.metaDim}>{`  ·  ${event.host_name}`}</Text>
       </Text>
 
       <View style={styles.footer}>
@@ -42,48 +39,40 @@ export function EventCard({ event, now, isHost, pending, onToggleJoin }: Props) 
               style={[
                 styles.trackFill,
                 { width: `${fill * 100}%` },
-                event.joinedByMe && styles.trackFillJoined,
+                event.joined && styles.trackFillJoined,
               ]}
             />
           </View>
           <Text style={styles.count}>
-            {event.joinCount} in
-            <Text style={styles.metaDim}>{`  ·  wants ${event.capacityWanted}`}</Text>
+            {event.joined_count} in
+            <Text style={styles.metaDim}>{`  ·  wants ${event.wants}`}</Text>
           </Text>
         </View>
 
-        {isHost ? (
-          <View style={styles.hostBadge}>
-            <Text style={styles.hostBadgeText}>Hosting</Text>
-          </View>
-        ) : (
-          <Pressable
-            onPress={onToggleJoin}
-            disabled={pending}
-            accessibilityRole="button"
-            accessibilityLabel={
-              event.joinedByMe
-                ? `Leave ${event.activity}`
-                : `Join ${event.activity} at ${event.location}`
-            }
-            style={({ pressed }) => [
-              styles.joinButton,
-              event.joinedByMe && styles.joinButtonJoined,
-              pressed && styles.joinButtonPressed,
-              pending && styles.joinButtonPending,
-            ]}
-          >
-            {pending ? (
-              <ActivityIndicator size="small" color={colors.text} />
-            ) : (
-              <Text
-                style={[styles.joinLabel, event.joinedByMe && styles.joinLabelJoined]}
-              >
-                {event.joinedByMe ? "You're in" : 'Join'}
-              </Text>
-            )}
-          </Pressable>
-        )}
+        <Pressable
+          onPress={onToggleJoin}
+          disabled={pending}
+          accessibilityRole="button"
+          accessibilityLabel={
+            event.joined
+              ? `Leave ${event.title}`
+              : `Join ${event.title} at ${event.place}`
+          }
+          style={({ pressed }) => [
+            styles.joinButton,
+            event.joined && styles.joinButtonJoined,
+            pressed && styles.joinButtonPressed,
+            pending && styles.joinButtonPending,
+          ]}
+        >
+          {pending ? (
+            <ActivityIndicator size="small" color={colors.text} />
+          ) : (
+            <Text style={[styles.joinLabel, event.joined && styles.joinLabelJoined]}>
+              {event.joined ? "You're in" : 'Join'}
+            </Text>
+          )}
+        </Pressable>
       </View>
     </View>
   );
@@ -187,19 +176,5 @@ const styles = StyleSheet.create({
   },
   joinLabelJoined: {
     color: colors.joined,
-  },
-  hostBadge: {
-    height: 42,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hostBadgeText: {
-    color: colors.faint,
-    fontSize: 14,
-    fontWeight: '600',
   },
 });

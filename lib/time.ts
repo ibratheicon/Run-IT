@@ -1,27 +1,69 @@
+import { EVENT_VISIBLE_MINUTES_AFTER_START } from './config';
+
+/**
+ * Pure time formatting for the feed. Everything takes an explicit `now` in
+ * milliseconds so the rules are unit-testable without faking a clock.
+ */
+
+const MINUTE_MS = 60 * 1000;
+
+/** Under 15 minutes out, the time reads as urgent rather than informational. */
+export const SOON_MINUTES = 15;
+
 /**
  * Auto-expiry is a read filter, not a background job: an event drops off the
- * feed 30 minutes after its start time.
+ * feed `EVENT_VISIBLE_MINUTES_AFTER_START` minutes after its start time. The
+ * `live_events` view applies the same rule; this re-checks it locally so an
+ * event disappears while the screen sits open.
  */
-export const EXPIRY_GRACE_MS = 30 * 60 * 1000;
-
 export function isLive(startsAt: string, now: number): boolean {
-  return now < new Date(startsAt).getTime() + EXPIRY_GRACE_MS;
+  const start = new Date(startsAt).getTime();
+  if (Number.isNaN(start)) return false;
+  return now < start + EVENT_VISIBLE_MINUTES_AFTER_START * MINUTE_MS;
 }
 
-/** "in 20 min" / "in 1h 15m" / "starting now" / "started 10 min ago" */
-export function relativeStart(startsAt: string, now: number): string {
-  const diffMin = Math.round((new Date(startsAt).getTime() - now) / 60000);
-
-  if (diffMin <= -1) return `started ${Math.abs(diffMin)} min ago`;
-  if (diffMin <= 1) return 'starting now';
-  if (diffMin < 60) return `in ${diffMin} min`;
-
-  const hours = Math.floor(diffMin / 60);
-  const mins = diffMin % 60;
-  return mins === 0 ? `in ${hours}h` : `in ${hours}h ${mins}m`;
+/**
+ * Whole minutes between now and the start. Past times round down and future
+ * times round up, so the label never reads "IN 0 MIN" or "STARTED 0 MIN AGO".
+ */
+export function minutesUntil(startsAt: string, now: number): number {
+  const diff = new Date(startsAt).getTime() - now;
+  return diff >= 0 ? Math.ceil(diff / MINUTE_MS) : Math.floor(diff / MINUTE_MS);
 }
 
-/** "8:30 PM" */
+export type StartLabel = {
+  /** "STARTED 10 MIN AGO", "IN 1 HR 5 MIN", "STARTING NOW". */
+  text: string;
+  /** Already started, or starting within the next 15 minutes. */
+  urgent: boolean;
+};
+
+/**
+ * The relative-time label. Anything in the past or inside the next quarter
+ * hour is urgent, which the card renders in red; everything else is muted.
+ */
+export function startLabel(startsAt: string, now: number): StartLabel {
+  const minutes = minutesUntil(startsAt, now);
+
+  if (minutes < 0) {
+    return { text: `STARTED ${Math.abs(minutes)} MIN AGO`, urgent: true };
+  }
+  if (minutes === 0) {
+    return { text: 'STARTING NOW', urgent: true };
+  }
+  return { text: `IN ${durationText(minutes)}`, urgent: minutes <= SOON_MINUTES };
+}
+
+/** "45 MIN" / "1 HR" / "1 HR 5 MIN" */
+export function durationText(minutes: number): string {
+  if (minutes < 60) return `${minutes} MIN`;
+
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} HR` : `${hours} HR ${rest} MIN`;
+}
+
+/** "10:28 PM" */
 export function clockTime(startsAt: string): string {
   return new Date(startsAt).toLocaleTimeString([], {
     hour: 'numeric',
@@ -30,5 +72,5 @@ export function clockTime(startsAt: string): string {
 }
 
 export function minutesFromNow(minutes: number): string {
-  return new Date(Date.now() + minutes * 60000).toISOString();
+  return new Date(Date.now() + minutes * MINUTE_MS).toISOString();
 }
