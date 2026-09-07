@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EventCard } from '../components/EventCard';
 import { fetchFeed, joinEvent, leaveEvent } from '../lib/api';
-import { useSession } from '../lib/session';
+import { nameInitial, useSession } from '../lib/session';
 import { colors, radius, spacing } from '../lib/theme';
 import { isLive } from '../lib/time';
 import type { FeedEvent } from '../lib/types';
@@ -97,7 +97,7 @@ export default function Feed() {
    * while the screen is open — re-filter locally so stale events disappear.
    */
   const live = useMemo(
-    () => events.filter((event) => isLive(event.starts_at, now)),
+    () => events.filter((event) => isLive(event.ends_at, now)),
     [events, now]
   );
 
@@ -121,7 +121,7 @@ export default function Feed() {
       );
 
       try {
-        if (joining) await joinEvent(event.id, userId);
+        if (joining) await joinEvent(event.id, userId, displayName ?? 'Someone');
         else await leaveEvent(event.id, userId);
         setError(null);
       } catch (cause) {
@@ -134,7 +134,7 @@ export default function Feed() {
         void load();
       }
     },
-    [userId, markPending, load]
+    [userId, displayName, markPending, load]
   );
 
   return (
@@ -142,12 +142,7 @@ export default function Feed() {
       <View style={styles.header}>
         <View style={styles.headerText}>
           <Text style={styles.wordmark}>RunIt</Text>
-          <Text style={styles.subtitle}>
-            Otero &amp; Wilbur
-            <Text style={styles.subtitleDim}>
-              {loading ? '' : `  ·  ${live.length} live`}
-            </Text>
-          </Text>
+          <Text style={styles.subtitle}>{loading ? ' ' : `${live.length} live`}</Text>
         </View>
 
         <View
@@ -155,9 +150,7 @@ export default function Feed() {
           accessibilityLabel={`Signed in as ${displayName ?? 'you'}`}
           style={styles.avatar}
         >
-          <Text style={styles.avatarText}>
-            {(displayName ?? '?').charAt(0).toUpperCase()}
-          </Text>
+          <Text style={styles.avatarText}>{nameInitial(displayName)}</Text>
         </View>
       </View>
 
@@ -219,8 +212,8 @@ function EmptyFeed({ onHost }: { onHost: () => void }) {
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>Nothing happening right now</Text>
       <Text style={styles.emptyBody}>
-        Somebody has to go first. Four fields, ten seconds, and whoever&apos;s
-        free will see it.
+        Somebody has to go first. A few fields, ten seconds, and
+        whoever&apos;s free will see it.
       </Text>
       <Pressable
         onPress={onHost}
@@ -259,9 +252,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 14,
     fontWeight: '500',
-  },
-  subtitleDim: {
-    color: colors.faint,
   },
   avatar: {
     width: 40,

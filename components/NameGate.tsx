@@ -19,9 +19,9 @@ import {
 import { colors, radius, spacing } from '../lib/theme';
 
 /**
- * The entire onboarding: a first name. No email, no password, no verification
- * step that can rate-limit us on move-in day. The name never leaves the
- * device except as a copy on the events this person hosts.
+ * The entire onboarding: a name. No email, no password, no verification step
+ * that can rate-limit us on day one. The name never leaves the device except
+ * as a copy on the events this person hosts and joins.
  */
 export function NameGate({ children }: { children: ReactNode }) {
   const { displayName, setDisplayName } = useSession();
@@ -65,7 +65,7 @@ function NamePrompt({
           <View style={styles.brandBlock}>
             <Text style={styles.wordmark}>RunIt</Text>
             <Text style={styles.tagline}>
-              What&apos;s happening in your dorm in the next couple of hours.
+              What&apos;s happening around you in the next couple of hours.
             </Text>
           </View>
 

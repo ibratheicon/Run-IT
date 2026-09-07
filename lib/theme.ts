@@ -6,7 +6,7 @@ export const colors = {
   text: '#F5F5F7',
   muted: '#8E8E99',
   faint: '#5A5A66',
-  /** Cardinal, brightened to survive a dark background. */
+  /** Warm red, brightened to survive a dark background. */
   accent: '#E8453C',
   accentDim: 'rgba(232, 69, 60, 0.14)',
   joined: '#2FBF71',

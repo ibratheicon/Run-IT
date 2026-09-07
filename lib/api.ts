@@ -1,5 +1,11 @@
 import { supabase } from './supabase';
-import type { EventInsert, FeedEvent, JoinRow, LiveEventRow } from './types';
+import type {
+  EventInsert,
+  FeedEvent,
+  JoinInsert,
+  JoinRow,
+  LiveEventRow,
+} from './types';
 
 /**
  * The whole data layer. Every screen talks to this module and nothing else.
@@ -22,7 +28,9 @@ export async function fetchFeed(userId: string): Promise<FeedEvent[]> {
   const [events, joins] = await Promise.all([
     supabase
       .from('live_events')
-      .select('id, title, place, starts_at, wants, host_id, host_name, joined_count')
+      .select(
+        'id, title, place, description, starts_at, ends_at, wants, host_id, host_name, joined_count'
+      )
       .returns<LiveEventRow[]>(),
     supabase
       .from('joins')
@@ -49,7 +57,9 @@ export async function createEvent(input: EventInsert): Promise<LiveEventRow> {
   const { data, error } = await supabase
     .from('events')
     .insert(input)
-    .select('id, title, place, starts_at, wants, host_id, host_name')
+    .select(
+      'id, title, place, description, starts_at, ends_at, wants, host_id, host_name'
+    )
     .single();
 
   if (error) fail("Couldn't post that", error);
@@ -62,11 +72,21 @@ export async function createEvent(input: EventInsert): Promise<LiveEventRow> {
  * No capacity enforcement — the count is a target, which is what lets this be
  * a plain insert instead of a concurrency-safe transaction. A duplicate key
  * means someone double-tapped; that is already the state we wanted.
+ *
+ * `user_name` is denormalized onto the row the same way `host_name` is on
+ * events, so a roster never needs a profiles join.
  */
-export async function joinEvent(eventId: string, userId: string): Promise<void> {
-  const { error } = await supabase
-    .from('joins')
-    .insert({ event_id: eventId, user_id: userId });
+export async function joinEvent(
+  eventId: string,
+  userId: string,
+  userName: string
+): Promise<void> {
+  const row: JoinInsert = {
+    event_id: eventId,
+    user_id: userId,
+    user_name: userName,
+  };
+  const { error } = await supabase.from('joins').insert(row);
 
   if (error && error.code !== '23505') fail("Couldn't join that", error);
 }

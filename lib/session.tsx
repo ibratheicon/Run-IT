@@ -17,13 +17,19 @@ import { supabase } from './supabase';
  *   - a Supabase anonymous session, which is what RLS checks and what every
  *     row is keyed on;
  *   - a display name, which lives only on this device and gets copied onto
- *     each event the user hosts. There is no profiles table.
+ *     each event the user hosts and each join they make. There is no
+ *     profiles table.
  */
 
 const NAME_KEY = 'runit.displayName';
 
 export const NAME_MIN_LENGTH = 1;
 export const NAME_MAX_LENGTH = 30;
+
+/** The avatar letter: the first character of the name. */
+export function nameInitial(displayName: string | null): string {
+  return (displayName?.trim().charAt(0) || '?').toUpperCase();
+}
 
 export type SessionValue = {
   userId: string | null;

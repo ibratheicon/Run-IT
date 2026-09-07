@@ -32,6 +32,12 @@ export function EventCard({ event, now, pending, onToggleJoin }: Props) {
         <Text style={styles.metaDim}>{`  ·  ${event.host_name}`}</Text>
       </Text>
 
+      {event.description?.trim() ? (
+        <Text style={styles.description} numberOfLines={2}>
+          {event.description.trim()}
+        </Text>
+      ) : null}
+
       <View style={styles.footer}>
         <View style={styles.countBlock}>
           <View style={styles.track}>
@@ -119,6 +125,11 @@ const styles = StyleSheet.create({
   },
   metaDim: {
     color: colors.faint,
+  },
+  description: {
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 20,
   },
   footer: {
     flexDirection: 'row',
