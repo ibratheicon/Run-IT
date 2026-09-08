@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { Href } from 'expo-router';
 import {
   createContext,
   useCallback,
@@ -38,6 +39,15 @@ export type SessionValue = {
   /** Set when anonymous sign-in failed, so the gate can say so out loud. */
   error: string | null;
   setDisplayName: (name: string) => Promise<void>;
+  /**
+   * Forget the name so the gate comes back. Clearing it tears the navigator
+   * down with the rest of the app, so `returnTo` is where to land once
+   * they've typed a new one.
+   */
+  clearDisplayName: (returnTo: Href) => Promise<void>;
+  /** The route a rename should land on, until someone takes it. */
+  renameReturnTo: Href | null;
+  consumeRenameReturnTo: () => void;
 };
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -47,6 +57,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [displayName, setName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [renameReturnTo, setRenameReturnTo] = useState<Href | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,9 +119,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem(NAME_KEY, trimmed);
   }, []);
 
+  const clearDisplayName = useCallback(async (returnTo: Href) => {
+    setRenameReturnTo(returnTo);
+    setName(null);
+    await AsyncStorage.removeItem(NAME_KEY);
+  }, []);
+
+  const consumeRenameReturnTo = useCallback(() => setRenameReturnTo(null), []);
+
   const value = useMemo(
-    () => ({ userId, displayName, loading, error, setDisplayName }),
-    [userId, displayName, loading, error, setDisplayName]
+    () => ({
+      userId,
+      displayName,
+      loading,
+      error,
+      setDisplayName,
+      clearDisplayName,
+      renameReturnTo,
+      consumeRenameReturnTo,
+    }),
+    [
+      userId,
+      displayName,
+      loading,
+      error,
+      setDisplayName,
+      clearDisplayName,
+      renameReturnTo,
+      consumeRenameReturnTo,
+    ]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

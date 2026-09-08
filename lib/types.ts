@@ -54,3 +54,20 @@ export type JoinInsert = {
 export type FeedEvent = LiveEventRow & {
   joined: boolean;
 };
+
+/** One line of the "who's in" list: a `joins` row, minus the event it's on. */
+export type RosterRow = {
+  user_id: string;
+  user_name: string;
+  /** ISO 8601. The list is ordered by it, so the host's row comes first. */
+  created_at: string;
+};
+
+/**
+ * The single event the signed-in user is on, and which side of it they're on.
+ * The one-live-event rule is what makes this a single value and not a list.
+ */
+export type MineEvent = {
+  event: FeedEvent;
+  role: 'host' | 'guest';
+};

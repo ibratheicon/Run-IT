@@ -5,6 +5,8 @@ import type {
   JoinInsert,
   JoinRow,
   LiveEventRow,
+  MineEvent,
+  RosterRow,
 } from './types';
 
 /**
@@ -40,6 +42,10 @@ function isOneLiveEvent(error: QueryError): boolean {
   );
 }
 
+/** Every column of the `live_events` view that the app renders. */
+const EVENT_COLUMNS =
+  'id, title, place, description, starts_at, ends_at, wants, host_id, host_name, joined_count';
+
 /** Turns a PostgREST failure into something short enough to show on screen. */
 function fail(what: string, error: QueryError): never {
   if (isOneLiveEvent(error)) throw new AlreadyInLiveEventError();
@@ -55,9 +61,7 @@ export async function fetchFeed(userId: string): Promise<FeedEvent[]> {
   const [events, joins] = await Promise.all([
     supabase
       .from('live_events')
-      .select(
-        'id, title, place, description, starts_at, ends_at, wants, host_id, host_name, joined_count'
-      )
+      .select(EVENT_COLUMNS)
       .returns<LiveEventRow[]>(),
     supabase
       .from('joins')
@@ -116,6 +120,72 @@ export async function joinEvent(
   const { error } = await supabase.from('joins').insert(row);
 
   if (error && error.code !== '23505') fail("Couldn't join that", error);
+}
+
+/**
+ * The one event this user is on, hosted or joined, or null. Hosting wins if
+ * both somehow exist. A join pointing at an event that has already expired
+ * reads as nothing, since the view no longer returns it.
+ */
+export async function fetchMine(userId: string): Promise<MineEvent | null> {
+  const hosted = await supabase
+    .from('live_events')
+    .select(EVENT_COLUMNS)
+    .eq('host_id', userId)
+    .limit(1)
+    .returns<LiveEventRow[]>();
+
+  if (hosted.error) fail("Couldn't load your event", hosted.error);
+
+  const hostedRow = hosted.data?.[0];
+  if (hostedRow) return { event: { ...hostedRow, joined: true }, role: 'host' };
+
+  const join = await supabase
+    .from('joins')
+    .select('event_id')
+    .eq('user_id', userId)
+    .limit(1)
+    .returns<JoinRow[]>();
+
+  if (join.error) fail("Couldn't load your event", join.error);
+
+  const eventId = join.data?.[0]?.event_id;
+  if (!eventId) return null;
+
+  const joined = await supabase
+    .from('live_events')
+    .select(EVENT_COLUMNS)
+    .eq('id', eventId)
+    .limit(1)
+    .returns<LiveEventRow[]>();
+
+  if (joined.error) fail("Couldn't load your event", joined.error);
+
+  const joinedRow = joined.data?.[0];
+  if (!joinedRow) return null;
+
+  return { event: { ...joinedRow, joined: true }, role: 'guest' };
+}
+
+/** Who's on an event, oldest join first — which puts the host at the top. */
+export async function fetchRoster(eventId: string): Promise<RosterRow[]> {
+  const { data, error } = await supabase
+    .from('joins')
+    .select('user_id, user_name, created_at')
+    .eq('event_id', eventId)
+    .order('created_at', { ascending: true })
+    .returns<RosterRow[]>();
+
+  if (error) fail("Couldn't load who's in", error);
+
+  return data ?? [];
+}
+
+/** Cancelling. RLS allows this only for your own event; joins cascade. */
+export async function deleteEvent(eventId: string): Promise<void> {
+  const { error } = await supabase.from('events').delete().eq('id', eventId);
+
+  if (error) fail("Couldn't cancel that", error);
 }
 
 export async function leaveEvent(eventId: string, userId: string): Promise<void> {

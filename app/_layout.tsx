@@ -1,5 +1,6 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -41,6 +42,7 @@ function Gate() {
 
   return (
     <NameGate>
+      <RenameReturn />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -49,9 +51,28 @@ function Gate() {
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="host" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="mine" options={{ presentation: 'modal' }} />
       </Stack>
     </NameGate>
   );
+}
+
+/**
+ * A rename drops the name, which takes the gate — and with it the whole
+ * navigator — off screen. This puts the user back where they started once
+ * they're named again. Renders nothing.
+ */
+function RenameReturn() {
+  const router = useRouter();
+  const { renameReturnTo, consumeRenameReturnTo } = useSession();
+
+  useEffect(() => {
+    if (!renameReturnTo) return;
+    consumeRenameReturnTo();
+    router.replace(renameReturnTo);
+  }, [renameReturnTo, consumeRenameReturnTo, router]);
+
+  return null;
 }
 
 const styles = StyleSheet.create({

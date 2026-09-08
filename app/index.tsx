@@ -159,13 +159,14 @@ export default function Feed() {
           <Text style={styles.subtitle}>{loading ? ' ' : `${live.length} live`}</Text>
         </View>
 
-        <View
-          accessibilityRole="image"
-          accessibilityLabel={`Signed in as ${displayName ?? 'you'}`}
-          style={styles.avatar}
+        <Pressable
+          onPress={() => router.push('/mine')}
+          accessibilityRole="button"
+          accessibilityLabel={`Your event — signed in as ${displayName ?? 'you'}`}
+          style={({ pressed }) => [styles.avatar, pressed && styles.fabPressed]}
         >
           <Text style={styles.avatarText}>{nameInitial(displayName)}</Text>
-        </View>
+        </Pressable>
       </View>
 
       {error ? (
