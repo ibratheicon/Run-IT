@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "RunIt",
+    "name": "Run It",
     "slug": "runit",
     "scheme": "runit",
     "version": "1.0.0",
@@ -9,7 +9,10 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.runit.app"
+      "bundleIdentifier": "com.runitstanford.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.runit.app",
@@ -32,6 +35,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0f19f338-1232-4372-8ec2-cbbbbb7ddd83"
+      }
     }
   }
 }
