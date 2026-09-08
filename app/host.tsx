@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Chip } from '../components/Chip';
-import { createEvent } from '../lib/api';
+import { AlreadyInLiveEventError, createEvent } from '../lib/api';
 import { useSession } from '../lib/session';
 import { colors, radius, spacing } from '../lib/theme';
 import {
@@ -163,7 +163,13 @@ export default function Host() {
       // No history to pop after a refresh, so go to the feed directly.
       router.replace('/');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Couldn't post that.");
+      setError(
+        cause instanceof AlreadyInLiveEventError
+          ? "You're already in a live event. Leave or cancel it before hosting another."
+          : cause instanceof Error
+            ? cause.message
+            : "Couldn't post that."
+      );
       // Only re-enable on failure — on success we're on our way out.
       submitting.current = false;
       setBusy(false);
@@ -386,6 +392,9 @@ function Field({
         <Text style={styles.label}>{label}</Text>
         <View style={styles.hintRow}>
           {hint ? <Text style={styles.fieldHint}>{hint}</Text> : null}
+          {hint && subHint ? (
+            <Text style={styles.fieldSubHint}>·</Text>
+          ) : null}
           {subHint ? <Text style={styles.fieldSubHint}>{subHint}</Text> : null}
         </View>
       </View>

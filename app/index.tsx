@@ -12,7 +12,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EventCard } from '../components/EventCard';
-import { fetchFeed, joinEvent, leaveEvent } from '../lib/api';
+import {
+  AlreadyInLiveEventError,
+  fetchFeed,
+  joinEvent,
+  leaveEvent,
+} from '../lib/api';
 import { nameInitial, useSession } from '../lib/session';
 import { colors, radius, spacing } from '../lib/theme';
 import { isLive } from '../lib/time';
@@ -22,7 +27,12 @@ import { useNow } from '../lib/useNow';
 /** How often the feed refetches on its own, so the other person's taps show up. */
 const POLL_MS = 20000;
 
+/** The one-live-event rule, worded for the person who just tapped Join. */
+const ALREADY_LIVE_MESSAGE =
+  "You're already in a live event. Leave it first to join this one.";
+
 function message(cause: unknown): string {
+  if (cause instanceof AlreadyInLiveEventError) return ALREADY_LIVE_MESSAGE;
   return cause instanceof Error ? cause.message : 'Something went wrong.';
 }
 
@@ -100,6 +110,10 @@ export default function Feed() {
     () => events.filter((event) => isLive(event.ends_at, now)),
     [events, now]
   );
+
+  // One live event per person: while they're on one, every other card's Join
+  // is inert rather than a tap that the database would reject.
+  const inAnEvent = useMemo(() => live.some((event) => event.joined), [live]);
 
   const toggleJoin = useCallback(
     async (event: FeedEvent) => {
@@ -183,6 +197,7 @@ export default function Feed() {
               event={item}
               now={now}
               pending={pendingIds.includes(item.id)}
+              blocked={inAnEvent && !item.joined}
               onToggleJoin={() => void toggleJoin(item)}
             />
           )}

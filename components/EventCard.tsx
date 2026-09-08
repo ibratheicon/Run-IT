@@ -8,10 +8,12 @@ type Props = {
   event: FeedEvent;
   now: number;
   pending: boolean;
+  /** The user is live on a different event, so this one can't be joined yet. */
+  blocked: boolean;
   onToggleJoin: () => void;
 };
 
-export function EventCard({ event, now, pending, onToggleJoin }: Props) {
+export function EventCard({ event, now, pending, blocked, onToggleJoin }: Props) {
   const when = startLabel(event.starts_at, now);
   const fill = Math.min(
     Math.max(event.joined_count / Math.max(event.wants, 1), 0),
@@ -22,7 +24,9 @@ export function EventCard({ event, now, pending, onToggleJoin }: Props) {
     <View style={styles.card}>
       <View style={styles.timeRow}>
         <Text style={[styles.when, when.urgent && styles.whenSoon]}>{when.text}</Text>
-        <Text style={styles.clock}>{clockTime(event.starts_at)}</Text>
+        <Text style={styles.clock}>
+          {`${clockTime(event.starts_at)} – ${clockTime(event.ends_at)}`}
+        </Text>
       </View>
 
       <Text style={styles.activity}>{event.title}</Text>
@@ -57,25 +61,36 @@ export function EventCard({ event, now, pending, onToggleJoin }: Props) {
 
         <Pressable
           onPress={onToggleJoin}
-          disabled={pending}
+          disabled={pending || blocked}
           accessibilityRole="button"
+          accessibilityState={{ disabled: blocked }}
           accessibilityLabel={
-            event.joined
-              ? `Leave ${event.title}`
-              : `Join ${event.title} at ${event.place}`
+            blocked
+              ? `Can't join ${event.title} — you're already in another event`
+              : event.joined
+                ? `Leave ${event.title}`
+                : `Join ${event.title} at ${event.place}`
           }
           style={({ pressed }) => [
             styles.joinButton,
             event.joined && styles.joinButtonJoined,
-            pressed && styles.joinButtonPressed,
+            blocked && styles.joinButtonBlocked,
+            pressed && !blocked && styles.joinButtonPressed,
             pending && styles.joinButtonPending,
           ]}
         >
           {pending ? (
             <ActivityIndicator size="small" color={colors.text} />
           ) : (
-            <Text style={[styles.joinLabel, event.joined && styles.joinLabelJoined]}>
-              {event.joined ? "You're in" : 'Join'}
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.joinLabel,
+                event.joined && styles.joinLabelJoined,
+                blocked && styles.joinLabelBlocked,
+              ]}
+            >
+              {blocked ? 'In another event' : event.joined ? "You're in" : 'Join'}
             </Text>
           )}
         </Pressable>
@@ -174,6 +189,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.joined,
   },
+  joinButtonBlocked: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    opacity: 0.6,
+  },
   joinButtonPressed: {
     opacity: 0.75,
   },
@@ -187,5 +208,9 @@ const styles = StyleSheet.create({
   },
   joinLabelJoined: {
     color: colors.joined,
+  },
+  joinLabelBlocked: {
+    color: colors.muted,
+    fontWeight: '600',
   },
 });

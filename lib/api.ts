@@ -14,8 +14,35 @@ import type {
  * the feed is one select plus one small select for "which of these am I on".
  */
 
+/**
+ * The database allows one live event per person — hosting or joining a second
+ * one raises `ONE_LIVE_EVENT`. It is thrown on as a type so screens can word
+ * the rule themselves; the raw code never reaches the UI.
+ */
+export class AlreadyInLiveEventError extends Error {
+  constructor() {
+    super('Already in a live event');
+    this.name = 'AlreadyInLiveEventError';
+  }
+}
+
+/** Where the raised message can land depends on how PostgREST reports it. */
+type QueryError = {
+  message: string;
+  details?: string | null;
+  hint?: string | null;
+  code?: string;
+};
+
+function isOneLiveEvent(error: QueryError): boolean {
+  return [error.message, error.details, error.hint].some((text) =>
+    text?.includes('ONE_LIVE_EVENT')
+  );
+}
+
 /** Turns a PostgREST failure into something short enough to show on screen. */
-function fail(what: string, error: { message: string }): never {
+function fail(what: string, error: QueryError): never {
+  if (isOneLiveEvent(error)) throw new AlreadyInLiveEventError();
   throw new Error(`${what} (${error.message})`);
 }
 
