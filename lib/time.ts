@@ -1,3 +1,5 @@
+import { GREY_AFTER_START_MINUTES } from './config';
+
 /**
  * Pure time formatting for the feed. Everything takes an explicit `now` in
  * milliseconds so the rules are unit-testable without faking a clock.
@@ -21,6 +23,16 @@ export function isLive(endsAt: string, now: number): boolean {
 }
 
 /**
+ * Well underway: past `GREY_AFTER_START_MINUTES` the feed dims the card and
+ * drops the urgent styling, since there is nothing left to hurry for.
+ */
+export function isGreyed(startsAt: string, now: number): boolean {
+  const start = new Date(startsAt).getTime();
+  if (Number.isNaN(start)) return false;
+  return now >= start + GREY_AFTER_START_MINUTES * MINUTE_MS;
+}
+
+/**
  * Whole minutes between now and the start. Past times round down and future
  * times round up, so the label never reads "IN 0 MIN" or "STARTED 0 MIN AGO".
  */
@@ -38,11 +50,18 @@ export type StartLabel = {
 
 /**
  * The relative-time label. Anything in the past or inside the next quarter
- * hour is urgent, which the card renders in red; everything else is muted.
+ * hour is urgent, which the card renders in red; everything else is muted —
+ * including an event that is already well underway.
  */
 export function startLabel(startsAt: string, now: number): StartLabel {
   const minutes = minutesUntil(startsAt, now);
 
+  if (isGreyed(startsAt, now)) {
+    return {
+      text: `IN PROGRESS · STARTED ${Math.abs(minutes)} MIN AGO`,
+      urgent: false,
+    };
+  }
   if (minutes < 0) {
     return { text: `STARTED ${Math.abs(minutes)} MIN AGO`, urgent: true };
   }

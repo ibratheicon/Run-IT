@@ -1,7 +1,7 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, spacing } from '../lib/theme';
-import { clockTime, startLabel } from '../lib/time';
+import { clockTime, isGreyed, startLabel } from '../lib/time';
 import type { FeedEvent } from '../lib/types';
 
 type Props = {
@@ -15,13 +15,15 @@ type Props = {
 
 export function EventCard({ event, now, pending, blocked, onToggleJoin }: Props) {
   const when = startLabel(event.starts_at, now);
+  // Long since started: dimmed, but every control still works.
+  const greyed = isGreyed(event.starts_at, now);
   const fill = Math.min(
     Math.max(event.joined_count / Math.max(event.wants, 1), 0),
     1
   );
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, greyed && styles.cardGreyed]}>
       <View style={styles.timeRow}>
         <Text style={[styles.when, when.urgent && styles.whenSoon]}>{when.text}</Text>
         <Text style={styles.clock}>
@@ -108,9 +110,13 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.sm,
   },
+  cardGreyed: {
+    opacity: 0.5,
+  },
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   when: {
