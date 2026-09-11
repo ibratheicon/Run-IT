@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NameGate } from '../components/NameGate';
 import { SessionProvider, useSession } from '../lib/session';
 import { colors, spacing } from '../lib/theme';
+import { registerPushToken } from '../lib/push';
 
 export default function RootLayout() {
   return (
@@ -21,7 +22,12 @@ export default function RootLayout() {
 
 /** No session and no name means no feed — everything downstream assumes both. */
 function Gate() {
+  
   const { userId, loading, error } = useSession();
+  useEffect(() => {
+  if (!userId) return;
+  registerPushToken(userId).catch(() => {});
+}, [userId]);
 
   if (loading) {
     return (
