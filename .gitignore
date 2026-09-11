@@ -47,3 +47,6 @@ yarn-error.*
 /android
 .env
 .vercel
+
+
+supabase/.temp
